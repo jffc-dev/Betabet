@@ -2,12 +2,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Pencil, Ticket } from "lucide-react";
+import { Check, Pencil, Ticket, Trophy } from "lucide-react";
 import { getGroupBySlug } from "../../lib/data/groups";
+import { listTemplatesForGroup } from "../../lib/data/templates";
 import { deleteGroupAction } from "../../lib/actions/groups";
 import { createInvitationAction, deleteInvitationAction } from "../../lib/actions/invitations";
+import { applyTemplateAction } from "../../lib/actions/templates";
 import { DeleteGroupButton } from "../../components/groups/DeleteGroupButton";
 import { CopyLinkButton } from "../../components/groups/CopyLinkButton";
+import { ApplyTemplateForm } from "../../components/groups/ApplyTemplateForm";
 import { BackLink } from "../../components/BackLink";
 import { Button } from "../../components/ui/button";
 
@@ -37,6 +40,8 @@ export default async function GroupDetailPage({
   const { slug } = await params;
   const group = await getGroupBySlug(slug);
   if (!group) notFound();
+
+  const templates = await listTemplatesForGroup(group.id);
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col px-4 py-6">
@@ -98,6 +103,51 @@ export default async function GroupDetailPage({
                 <span className="ml-3 shrink-0 text-xs text-neutral-400">
                   {STATUS_LABEL[round.status]}
                 </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      <Section title="Plantillas">
+        <p className="mb-3 text-sm text-neutral-500">
+          Usa una competición ya armada para crear sus rondas y partidos al instante.
+        </p>
+        {templates.length === 0 ? (
+          <Muted>No hay plantillas disponibles.</Muted>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {templates.map((template) => (
+              <li
+                key={template.id}
+                className="rounded-2xl border border-neutral-800 bg-neutral-900 p-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1.5 text-sm text-neutral-200">
+                      <Trophy className="size-3.5 shrink-0 text-neutral-500" />
+                      <span className="truncate">{template.name}</span>
+                    </p>
+                    <p className="mt-0.5 text-xs text-neutral-500">
+                      {template._count.matches} partidos
+                    </p>
+                  </div>
+                  {template.applied ? (
+                    <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-emerald-400">
+                      <Check className="size-3.5" />
+                      Aplicada
+                    </span>
+                  ) : null}
+                </div>
+                {template.applied ? null : (
+                  <ApplyTemplateForm
+                    action={applyTemplateAction.bind(null, {
+                      templateId: template.id,
+                      groupId: group.id,
+                      slug: group.slug,
+                    })}
+                  />
+                )}
               </li>
             ))}
           </ul>

@@ -4,20 +4,21 @@ import type { PrismaClient } from "../../app/generated/prisma/client";
 // Source: official schedule cross-checked against FIFA/ESPN (June 2026).
 // Match #1 = Mexico vs South Africa, 2026-06-11, Estadio Azteca (Mexico City).
 
-// 48 teams by FIFA 3-letter code.
+// 48 teams by FIFA 3-letter code. Names are in Spanish (the app is Spanish-only);
+// shortName keeps the language-neutral FIFA code.
 const TEAMS: Record<string, string> = {
-  MEX: "Mexico", RSA: "South Africa", KOR: "South Korea", CZE: "Czechia",
-  CAN: "Canada", BIH: "Bosnia and Herzegovina", QAT: "Qatar", SUI: "Switzerland",
-  BRA: "Brazil", MAR: "Morocco", HAI: "Haiti", SCO: "Scotland",
-  USA: "United States", PAR: "Paraguay", AUS: "Australia", TUR: "Türkiye",
-  GER: "Germany", CUW: "Curaçao", CIV: "Ivory Coast", ECU: "Ecuador",
-  NED: "Netherlands", JPN: "Japan", SWE: "Sweden", TUN: "Tunisia",
-  BEL: "Belgium", EGY: "Egypt", IRN: "Iran", NZL: "New Zealand",
-  ESP: "Spain", CPV: "Cape Verde", KSA: "Saudi Arabia", URU: "Uruguay",
-  FRA: "France", SEN: "Senegal", IRQ: "Iraq", NOR: "Norway",
-  ARG: "Argentina", ALG: "Algeria", AUT: "Austria", JOR: "Jordan",
-  POR: "Portugal", COD: "DR Congo", UZB: "Uzbekistan", COL: "Colombia",
-  ENG: "England", CRO: "Croatia", GHA: "Ghana", PAN: "Panama",
+  MEX: "México", RSA: "Sudáfrica", KOR: "Corea del Sur", CZE: "Chequia",
+  CAN: "Canadá", BIH: "Bosnia y Herzegovina", QAT: "Catar", SUI: "Suiza",
+  BRA: "Brasil", MAR: "Marruecos", HAI: "Haití", SCO: "Escocia",
+  USA: "Estados Unidos", PAR: "Paraguay", AUS: "Australia", TUR: "Turquía",
+  GER: "Alemania", CUW: "Curazao", CIV: "Costa de Marfil", ECU: "Ecuador",
+  NED: "Países Bajos", JPN: "Japón", SWE: "Suecia", TUN: "Túnez",
+  BEL: "Bélgica", EGY: "Egipto", IRN: "Irán", NZL: "Nueva Zelanda",
+  ESP: "España", CPV: "Cabo Verde", KSA: "Arabia Saudita", URU: "Uruguay",
+  FRA: "Francia", SEN: "Senegal", IRQ: "Irak", NOR: "Noruega",
+  ARG: "Argentina", ALG: "Argelia", AUT: "Austria", JOR: "Jordania",
+  POR: "Portugal", COD: "RD del Congo", UZB: "Uzbekistán", COL: "Colombia",
+  ENG: "Inglaterra", CRO: "Croacia", GHA: "Ghana", PAN: "Panamá",
 };
 
 // FIFA 3-letter code -> ISO 3166-1 alpha-2 (lowercase) for flag images.
@@ -141,6 +142,11 @@ const FIXTURES: Fixture[] = [
 ];
 
 const PROVIDER = "fifa-wc-2026";
+const TEMPLATE_NAME = "Copa Mundial 2026 — Fase de grupos";
+const TEMPLATE_DESCRIPTION = "Los 72 partidos de la fase de grupos (Grupos A–L, 11–27 de junio de 2026).";
+const COMPETITION = "Copa Mundial 2026";
+const STAGE = "Fase de grupos";
+const groupLabel = (g: string) => `Grupo ${g}`;
 
 function kickoffUtc(f: Fixture): Date {
   const [y, m, d] = f.date.split("-").map(Number);
@@ -174,11 +180,11 @@ export async function seedWorldCup2026(client: PrismaClient): Promise<WorldCupSe
 
   const template = await client.template.upsert({
     where: { provider_externalId: { provider: PROVIDER, externalId: "group-stage" } },
-    update: {},
+    update: { name: TEMPLATE_NAME, description: TEMPLATE_DESCRIPTION },
     create: {
-      name: "FIFA World Cup 2026 — Group Stage",
+      name: TEMPLATE_NAME,
       slug: "world-cup-2026-group-stage",
-      description: "All 72 group-stage matches across Groups A–L (June 11–27, 2026).",
+      description: TEMPLATE_DESCRIPTION,
       kind: "TOURNAMENT",
       season: "2026",
       provider: PROVIDER,
@@ -193,12 +199,12 @@ export async function seedWorldCup2026(client: PrismaClient): Promise<WorldCupSe
 
     const match = await client.match.upsert({
       where: { provider_externalId: { provider: PROVIDER, externalId: String(f.no) } },
-      update: { kickoff: kickoffUtc(f), homeTeamId, awayTeamId },
+      update: { kickoff: kickoffUtc(f), homeTeamId, awayTeamId, competition: COMPETITION },
       create: {
         homeTeamId,
         awayTeamId,
         kickoff: kickoffUtc(f),
-        competition: "FIFA World Cup 2026",
+        competition: COMPETITION,
         provider: PROVIDER,
         externalId: String(f.no),
       },
@@ -206,12 +212,12 @@ export async function seedWorldCup2026(client: PrismaClient): Promise<WorldCupSe
 
     await client.templateMatch.upsert({
       where: { templateId_matchId: { templateId: template.id, matchId: match.id } },
-      update: { groupName: `Group ${f.group}`, matchday: matchdayOf(f.no), position: f.no },
+      update: { stage: STAGE, groupName: groupLabel(f.group), matchday: matchdayOf(f.no), position: f.no },
       create: {
         templateId: template.id,
         matchId: match.id,
-        stage: "Group Stage",
-        groupName: `Group ${f.group}`,
+        stage: STAGE,
+        groupName: groupLabel(f.group),
         matchday: matchdayOf(f.no),
         position: f.no,
         points: 1,
