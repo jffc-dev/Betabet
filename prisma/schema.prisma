@@ -1,0 +1,229 @@
+// BetaBet — soccer-match betting for private groups.
+// See plan: split auth identity (User) from participant (Member); rounds bundle
+// 1..N matches and are scored by points-per-match.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+  runtime  = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Connection URL lives in prisma.config.ts (Prisma 7).
+}
+
+// ─────────────────────────── Enums ───────────────────────────
+
+enum MemberRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum MatchStatus {
+  SCHEDULED
+  LIVE
+  FINISHED
+  CANCELED
+  POSTPONED
+}
+
+enum Outcome {
+  HOME
+  DRAW
+  AWAY
+}
+
+enum RoundStatus {
+  DRAFT
+  OPEN
+  LOCKED
+  SETTLED
+}
+
+// ──────────────────── Auth.js (Google + Credentials) ────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String? // credentials login; null for OAuth-only users
+  accounts      Account[]
+  sessions      Session[]
+  memberships   Member[] // one Member per group
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ──────────────────────────── Domain ────────────────────────────
+
+model Group {
+  id                 String       @id @default(cuid())
+  name               String
+  slug               String       @unique
+  description        String?
+  defaultMatchPoints Int          @default(1) // group-wide scoring default
+  members            Member[]
+  invitations        Invitation[]
+  rounds             Round[]
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+}
+
+model Member {
+  id          String       @id @default(cuid())
+  groupId     String
+  group       Group        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId      String? // null = guest (link-only)
+  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name        String // display name, always present
+  role        MemberRole   @default(MEMBER)
+  accessToken String       @unique // guest link token (app-generated)
+  predictions Prediction[]
+  invitation  Invitation? // the single-use code this member was created from
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // An auth user joins a group once; multiple null-userId guests are allowed
+  // (Postgres treats NULLs as distinct).
+  @@unique([groupId, userId])
+  @@index([userId])
+}
+
+model Invitation {
+  id                 String     @id @default(cuid())
+  groupId            String
+  group              Group      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  code               String     @unique // app-generated, URL-safe
+  label              String? // e.g. "for Carlos"
+  role               MemberRole @default(MEMBER) // role granted on redemption
+  expiresAt          DateTime?
+  redeemedByMemberId String?    @unique // set on single-use redemption
+  redeemedByMember   Member?    @relation(fields: [redeemedByMemberId], references: [id], onDelete: SetNull)
+  redeemedAt         DateTime?
+  createdById        String?
+  createdAt          DateTime   @default(now())
+}
+
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  shortName   String?
+  crestUrl    String?
+  provider    String? // API-ready (e.g. "football-data")
+  externalId  String?
+  homeMatches Match[]  @relation("HomeTeam")
+  awayMatches Match[]  @relation("AwayTeam")
+  createdAt   DateTime @default(now())
+
+  @@unique([provider, externalId])
+}
+
+model Match {
+  id           String       @id @default(cuid())
+  homeTeamId   String
+  homeTeam     Team         @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeamId   String
+  awayTeam     Team         @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  kickoff      DateTime
+  status       MatchStatus  @default(SCHEDULED)
+  homeScore    Int?
+  awayScore    Int?
+  result       Outcome? // derived & stored when FINISHED
+  competition  String? // free-text league name
+  provider     String?
+  externalId   String?
+  roundMatches RoundMatch[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([provider, externalId])
+  @@index([kickoff])
+}
+
+model Round {
+  id           String       @id @default(cuid())
+  groupId      String
+  group        Group        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  title        String
+  description  String?
+  status       RoundStatus  @default(DRAFT)
+  lockAt       DateTime? // prediction deadline (often earliest kickoff)
+  roundMatches RoundMatch[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([groupId, status])
+}
+
+model RoundMatch {
+  id          String       @id @default(cuid())
+  roundId     String
+  round       Round        @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  matchId     String
+  match       Match        @relation(fields: [matchId], references: [id], onDelete: Restrict)
+  points      Int          @default(1) // per-match weight; overrides group default
+  position    Int? // display order
+  predictions Prediction[]
+
+  @@unique([roundId, matchId])
+  @@index([matchId])
+}
+
+model Prediction {
+  id            String     @id @default(cuid())
+  roundMatchId  String
+  roundMatch    RoundMatch @relation(fields: [roundMatchId], references: [id], onDelete: Cascade)
+  memberId      String
+  member        Member     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  outcome       Outcome // 1X2 pick (required in v1)
+  homeScore     Int? // score-ready (exact-score bonus later)
+  awayScore     Int?
+  pointsAwarded Int? // computed at settlement; null until SETTLED
+  isCorrect     Boolean? // computed at settlement
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@unique([roundMatchId, memberId]) // one prediction per member per match
+  @@index([memberId])
+}

@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: betabet-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: betabet
+      POSTGRES_PASSWORD: betabet
+      POSTGRES_DB: betabet
+    ports:
+      # Host 5435 -> container 5432 (5432-5434 are used by other local services).
+      - "5435:5432"
+    volumes:
+      - betabet-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U betabet -d betabet"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  betabet-pgdata:
