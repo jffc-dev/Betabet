@@ -2,6 +2,8 @@ import "dotenv/config";
 import { prisma } from "../app/lib/prisma";
 import { generateAccessToken, generateInvitationCode } from "../app/lib/tokens";
 import { settleRound, type OutcomeValue } from "../app/lib/scoring";
+import { applyTemplateToGroup } from "../app/lib/templates";
+import { seedWorldCup2026 } from "./seeds/worldcup2026";
 
 // Exercises the full data-flow: group -> invitation -> guest member (redeemed)
 // -> round of 2 matches -> predictions -> enter scores -> settle -> leaderboard.
@@ -11,6 +13,8 @@ async function reset() {
   await prisma.prediction.deleteMany();
   await prisma.roundMatch.deleteMany();
   await prisma.round.deleteMany();
+  await prisma.templateMatch.deleteMany();
+  await prisma.template.deleteMany();
   await prisma.invitation.deleteMany();
   await prisma.member.deleteMany();
   await prisma.match.deleteMany();
@@ -125,6 +129,23 @@ async function main() {
   for (const m of members) {
     console.log(`  ${m.name.padEnd(6)} /m/${m.accessToken}`);
   }
+
+  // 10. Reusable templates: seed the real World Cup 2026 group stage and apply
+  // it to the existing group, proving one definition is reused across groups.
+  const wc = await seedWorldCup2026(prisma);
+  console.log(
+    `\nTemplate seeded: World Cup 2026 group stage — ${wc.teams} teams, ${wc.matches} matches, ${wc.groups} groups.`,
+  );
+
+  const applied = await applyTemplateToGroup(prisma, {
+    templateId: wc.templateId,
+    groupId: group.id,
+    groupBy: "GROUP",
+  });
+  const totalMatches = applied.reduce((sum, r) => sum + r.matchCount, 0);
+  console.log(
+    `Applied World Cup 2026 to "${group.name}" → ${applied.length} rounds / ${totalMatches} round-matches.`,
+  );
 }
 
 main()

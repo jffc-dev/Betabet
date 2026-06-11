@@ -42,6 +42,11 @@ enum RoundStatus {
   SETTLED
 }
 
+enum TemplateKind {
+  LEAGUE
+  TOURNAMENT
+}
+
 // ──────────────────── Auth.js (Google + Credentials) ────────────────────
 
 model User {
@@ -160,22 +165,23 @@ model Team {
 }
 
 model Match {
-  id           String       @id @default(cuid())
-  homeTeamId   String
-  homeTeam     Team         @relation("HomeTeam", fields: [homeTeamId], references: [id])
-  awayTeamId   String
-  awayTeam     Team         @relation("AwayTeam", fields: [awayTeamId], references: [id])
-  kickoff      DateTime
-  status       MatchStatus  @default(SCHEDULED)
-  homeScore    Int?
-  awayScore    Int?
-  result       Outcome? // derived & stored when FINISHED
-  competition  String? // free-text league name
-  provider     String?
-  externalId   String?
-  roundMatches RoundMatch[]
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id              String          @id @default(cuid())
+  homeTeamId      String
+  homeTeam        Team            @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeamId      String
+  awayTeam        Team            @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  kickoff         DateTime
+  status          MatchStatus     @default(SCHEDULED)
+  homeScore       Int?
+  awayScore       Int?
+  result          Outcome? // derived & stored when FINISHED
+  competition     String? // free-text league name
+  provider        String?
+  externalId      String?
+  roundMatches    RoundMatch[]
+  templateMatches TemplateMatch[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   @@unique([provider, externalId])
   @@index([kickoff])
@@ -185,6 +191,8 @@ model Round {
   id           String       @id @default(cuid())
   groupId      String
   group        Group        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  templateId   String? // provenance: set when instantiated from a Template
+  template     Template?    @relation(fields: [templateId], references: [id], onDelete: SetNull)
   title        String
   description  String?
   status       RoundStatus  @default(DRAFT)
@@ -194,6 +202,7 @@ model Round {
   updatedAt    DateTime     @updatedAt
 
   @@index([groupId, status])
+  @@index([templateId])
 }
 
 model RoundMatch {
@@ -226,4 +235,40 @@ model Prediction {
 
   @@unique([roundMatchId, memberId]) // one prediction per member per match
   @@index([memberId])
+}
+
+// ──────────────────── Reusable competition templates ────────────────────
+
+model Template {
+  id          String          @id @default(cuid())
+  name        String
+  slug        String          @unique
+  description String?
+  kind        TemplateKind    @default(TOURNAMENT)
+  season      String? // e.g. "2026"
+  provider    String? // API-ready, e.g. "fifa-wc-2026"
+  externalId  String?
+  matches     TemplateMatch[]
+  rounds      Round[] // rounds instantiated from this template
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([provider, externalId])
+}
+
+model TemplateMatch {
+  id         String   @id @default(cuid())
+  templateId String
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  matchId    String
+  match      Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  stage      String? // e.g. "Group Stage"
+  groupName  String? // e.g. "Group A"
+  matchday   Int? // 1..3 for the group stage
+  position   Int // ordering within the template
+  points     Int      @default(1) // default weight when instantiated
+
+  @@unique([templateId, matchId])
+  @@index([templateId, groupName])
+  @@index([matchId])
 }
