@@ -3,6 +3,23 @@ import type { PrismaClient } from "../generated/prisma/client";
 // 1X2 outcome values, matching the Prisma `Outcome` enum string values.
 export type OutcomeValue = "HOME" | "DRAW" | "AWAY";
 
+// Scoring strategy values, matching the Prisma `ScoringMode` enum string values.
+export type ScoringModeValue = "FLAT" | "UNIQUE_BONUS";
+
+/** Per-match scoring config, resolved from the round + round-match columns. */
+export interface RoundMatchScoring {
+  mode: ScoringModeValue;
+  points: number; // shared/correct award
+  uniqueHitPoints: number; // award for a lone correct pick (UNIQUE_BONUS only)
+}
+
+/** Outcome of scoring one prediction. */
+export interface PredictionScore {
+  memberId: string;
+  isCorrect: boolean;
+  pointsAwarded: number;
+}
+
 /** Derive the 1X2 result of a finished match from its final score. */
 export function deriveOutcome(homeScore: number, awayScore: number): OutcomeValue {
   if (homeScore > awayScore) return "HOME";
@@ -11,17 +28,29 @@ export function deriveOutcome(homeScore: number, awayScore: number): OutcomeValu
 }
 
 /**
- * Score a single prediction. v1 awards the match's points for a correct 1X2
- * pick. An exact-score bonus can be layered on here later (the predicted and
- * actual scores are both stored) without any schema change.
+ * Score every prediction for one match within one round. The "lone hit" count
+ * is scoped to the predictions passed in — these must be exactly one round's
+ * predictions for one match (the `@@unique([roundMatchId, memberId])` set).
+ *
+ * UNIQUE_BONUS: a single correct member earns `uniqueHitPoints`; two or more
+ * correct members each earn the shared `points`. FLAT always awards `points`
+ * per correct pick.
  */
-export function scorePrediction(
-  predicted: OutcomeValue,
+export function scoreRoundMatch(
   actual: OutcomeValue,
-  matchPoints: number,
-): { isCorrect: boolean; pointsAwarded: number } {
-  const isCorrect = predicted === actual;
-  return { isCorrect, pointsAwarded: isCorrect ? matchPoints : 0 };
+  predictions: Array<{ memberId: string; outcome: OutcomeValue }>,
+  scoring: RoundMatchScoring,
+): PredictionScore[] {
+  const correctCount = predictions.reduce((n, p) => n + (p.outcome === actual ? 1 : 0), 0);
+  const award =
+    scoring.mode === "UNIQUE_BONUS" && correctCount === 1
+      ? scoring.uniqueHitPoints
+      : scoring.points;
+
+  return predictions.map((p) => {
+    const isCorrect = p.outcome === actual;
+    return { memberId: p.memberId, isCorrect, pointsAwarded: isCorrect ? award : 0 };
+  });
 }
 
 export interface LeaderboardEntry {
@@ -98,21 +127,28 @@ export async function settleRound(client: PrismaClient, roundId: string): Promis
         });
       }
 
+      const scores = scoreRoundMatch(
+        result,
+        rm.predictions.map((p) => ({ memberId: p.memberId, outcome: p.outcome as OutcomeValue })),
+        {
+          mode: round.scoringMode as ScoringModeValue,
+          points: rm.points,
+          uniqueHitPoints: rm.uniqueHitPoints,
+        },
+      );
+      const scoreByMember = new Map(scores.map((s) => [s.memberId, s]));
+
       for (const prediction of rm.predictions) {
-        const { isCorrect, pointsAwarded } = scorePrediction(
-          prediction.outcome as OutcomeValue,
-          result,
-          rm.points,
-        );
+        const score = scoreByMember.get(prediction.memberId)!;
         await tx.prediction.update({
           where: { id: prediction.id },
-          data: { isCorrect, pointsAwarded },
+          data: { isCorrect: score.isCorrect, pointsAwarded: score.pointsAwarded },
         });
         leaderboardRows.push({
           memberId: prediction.member.id,
           memberName: prediction.member.name,
-          pointsAwarded,
-          isCorrect,
+          pointsAwarded: score.pointsAwarded,
+          isCorrect: score.isCorrect,
         });
       }
     }

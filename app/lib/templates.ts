@@ -35,6 +35,12 @@ export async function applyTemplateToGroup(
     },
   });
 
+  // Created rounds inherit the group's scoring defaults (mode + bonus award).
+  const group = await client.group.findUniqueOrThrow({
+    where: { id: groupId },
+    select: { defaultScoringMode: true, defaultUniqueHitPoints: true },
+  });
+
   // Partition template matches into buckets keyed by the chosen grouping.
   // Insertion order follows `position` (chronological), so rounds and their
   // matches keep a sensible order.
@@ -68,11 +74,13 @@ export async function applyTemplateToGroup(
           templateId: template.id,
           title,
           status: "OPEN",
+          scoringMode: group.defaultScoringMode,
           lockAt,
           roundMatches: {
             create: items.map((tm, i) => ({
               matchId: tm.matchId,
               points: tm.points,
+              uniqueHitPoints: group.defaultUniqueHitPoints,
               position: tm.position ?? i + 1,
             })),
           },
