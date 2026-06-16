@@ -89,7 +89,7 @@ function ScoreInput({ name, defaultValue }: { name: string; defaultValue: number
       inputMode="numeric"
       defaultValue={defaultValue ?? ""}
       aria-label={name.startsWith("home") ? "Marcador local" : "Marcador visitante"}
-      className="h-10 w-11 shrink-0 bg-neutral-950 px-0 text-center"
+      className="h-10 w-11 shrink-0 bg-neutral-950 px-0 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
     />
   );
 }
