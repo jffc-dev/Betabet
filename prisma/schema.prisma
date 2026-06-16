@@ -42,6 +42,15 @@ enum RoundStatus {
   SETTLED
 }
 
+// How correct picks are rewarded within a round.
+//   FLAT         — every correct pick earns the match's `points`.
+//   UNIQUE_BONUS — a lone correct pick earns `uniqueHitPoints`; if two or more
+//                  members are correct, they each earn the shared `points`.
+enum ScoringMode {
+  FLAT
+  UNIQUE_BONUS
+}
+
 enum TemplateKind {
   LEAGUE
   TOURNAMENT
@@ -107,7 +116,10 @@ model Group {
   name               String
   slug               String       @unique
   description        String?
-  defaultMatchPoints Int          @default(1) // group-wide scoring default
+  defaultMatchPoints Int          @default(1) // group-wide shared/correct award default
+  // Group-wide defaults for the unique-hit bonus; copied onto new rounds/matches.
+  defaultScoringMode     ScoringMode @default(FLAT)
+  defaultUniqueHitPoints Int         @default(2)
   members            Member[]
   invitations        Invitation[]
   rounds             Round[]
@@ -196,6 +208,7 @@ model Round {
   title        String
   description  String?
   status       RoundStatus  @default(DRAFT)
+  scoringMode  ScoringMode  @default(FLAT) // how correct picks are rewarded
   lockAt       DateTime? // prediction deadline (often earliest kickoff)
   roundMatches RoundMatch[]
   createdAt    DateTime     @default(now())
@@ -211,8 +224,9 @@ model RoundMatch {
   round       Round        @relation(fields: [roundId], references: [id], onDelete: Cascade)
   matchId     String
   match       Match        @relation(fields: [matchId], references: [id], onDelete: Restrict)
-  points      Int          @default(1) // per-match weight; overrides group default
-  position    Int? // display order
+  points          Int          @default(1) // shared/correct award; overrides group default
+  uniqueHitPoints Int          @default(2) // award for a lone correct pick (UNIQUE_BONUS rounds)
+  position        Int? // display order
   predictions Prediction[]
 
   @@unique([roundId, matchId])
