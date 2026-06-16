@@ -69,6 +69,13 @@ export default async function GroupDetailPage({
         <Stat label="Pts/partido" value={group.defaultMatchPoints} />
       </dl>
 
+      <Button asChild variant="outline" className="mt-4 w-full">
+        <Link href={`/groups/${group.slug}/leaderboard`}>
+          <Trophy className="size-4" />
+          Ver clasificación
+        </Link>
+      </Button>
+
       <Section title="Miembros">
         {group.members.length === 0 ? (
           <Muted>Aún no hay miembros. Crea una invitación para añadir gente.</Muted>
