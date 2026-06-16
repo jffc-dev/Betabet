@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState, startTransition } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState, startTransition } from "react";
 import { Check } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "../../lib/utils";
@@ -31,6 +31,16 @@ export function PredictionBoard({ items, action }: { items: PlayItem[]; action: 
   const predicted = Object.keys(picks).length;
   const openCount = items.filter((i) => !i.locked).length;
 
+  // Scroll the first live/upcoming match into view once, so the user lands on
+  // the match that matters now instead of having to scroll past finished ones.
+  const targetId = useMemo(() => findCurrentMatchId(items), [items]);
+  const targetRef = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    const node = targetRef.current;
+    if (!node) return;
+    node.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [targetId]);
+
   function save() {
     const payload = Object.entries(picks).map(([roundMatchId, outcome]) => ({
       roundMatchId,
@@ -49,7 +59,10 @@ export function PredictionBoard({ items, action }: { items: PlayItem[]; action: 
             </h2>
             <ul className="flex flex-col gap-3">
               {group.items.map((item) => (
-                <li key={item.roundMatchId}>
+                <li
+                  key={item.roundMatchId}
+                  ref={item.roundMatchId === targetId ? targetRef : undefined}
+                >
                   <MatchPicker
                     item={item}
                     pick={picks[item.roundMatchId] ?? null}
@@ -183,6 +196,27 @@ function OutcomeRow({
       {selected ? <Check className="size-4 shrink-0 text-emerald-400" /> : null}
     </button>
   );
+}
+
+// Roughly how long a match stays "live" after kickoff. Used to decide whether
+// a match that has already started should still be the scroll target.
+const LIVE_WINDOW_MS = 2.5 * 60 * 60 * 1000;
+
+// The match to scroll to: the first one still live or yet to start (items are
+// kickoff-ordered). If every match has finished, target the most recent one.
+// Returns null when there's nothing worth jumping to (only one match, or the
+// first match is already the target and sits at the top of the list).
+function findCurrentMatchId(items: PlayItem[]): string | null {
+  if (items.length <= 1) return null;
+
+  const now = Date.now();
+  const index = items.findIndex(
+    (item) => new Date(item.kickoff).getTime() + LIVE_WINDOW_MS > now,
+  );
+  const target = index === -1 ? items.length - 1 : index;
+
+  // The first match is already in view on load — no need to scroll.
+  return target === 0 ? null : items[target].roundMatchId;
 }
 
 function groupByDate(items: PlayItem[]) {
