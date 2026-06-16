@@ -95,14 +95,16 @@ export default async function GroupDetailPage({
         ) : (
           <ul className="flex flex-col gap-2">
             {group.rounds.map((round) => (
-              <li
-                key={round.id}
-                className="flex items-center justify-between rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-3"
-              >
-                <span className="truncate text-sm text-neutral-100">{round.title}</span>
-                <span className="ml-3 shrink-0 text-xs text-neutral-400">
-                  {STATUS_LABEL[round.status]}
-                </span>
+              <li key={round.id}>
+                <Link
+                  href={`/groups/${group.slug}/rounds/${round.id}`}
+                  className="flex items-center justify-between rounded-2xl border border-neutral-800 bg-neutral-900 px-4 py-3 transition-colors hover:border-neutral-700 active:bg-neutral-800/60"
+                >
+                  <span className="truncate text-sm text-neutral-100">{round.title}</span>
+                  <span className="ml-3 shrink-0 text-xs text-neutral-400">
+                    {STATUS_LABEL[round.status]}
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>
