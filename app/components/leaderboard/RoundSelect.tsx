@@ -1,6 +1,17 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+
+// Radix Select reserves the empty string, so the "General" (all rounds) option
+// uses a sentinel value mapped back to the base leaderboard URL.
+const GENERAL = "__general__";
 
 export function RoundSelect({
   slug,
@@ -14,25 +25,27 @@ export function RoundSelect({
   const router = useRouter();
 
   return (
-    <select
-      aria-label="Elegir ronda"
-      value={current ?? ""}
-      onChange={(e) => {
-        const value = e.target.value;
+    <Select
+      value={current ?? GENERAL}
+      onValueChange={(value) => {
         router.push(
-          value
-            ? `/groups/${slug}/leaderboard?round=${value}`
-            : `/groups/${slug}/leaderboard`,
+          value === GENERAL
+            ? `/groups/${slug}/leaderboard`
+            : `/groups/${slug}/leaderboard?round=${value}`,
         );
       }}
-      className="h-10 w-full rounded-xl border border-neutral-700 bg-neutral-900 px-3 text-sm text-neutral-200 focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
     >
-      <option value="">General</option>
-      {rounds.map((round) => (
-        <option key={round.id} value={round.id}>
-          {round.title}
-        </option>
-      ))}
-    </select>
+      <SelectTrigger aria-label="Elegir ronda" className="text-sm">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={GENERAL}>General</SelectItem>
+        {rounds.map((round) => (
+          <SelectItem key={round.id} value={round.id}>
+            {round.title}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

@@ -3,6 +3,7 @@
 import { useActionState, useEffect } from "react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import { initialActionState, type ActionState } from "../../lib/actions/types";
 
 export interface ResultMatch {
@@ -80,7 +81,7 @@ function TeamSide({
 
 function ScoreInput({ name, defaultValue }: { name: string; defaultValue: number | null }) {
   return (
-    <input
+    <Input
       type="number"
       name={name}
       min={0}
@@ -88,7 +89,7 @@ function ScoreInput({ name, defaultValue }: { name: string; defaultValue: number
       inputMode="numeric"
       defaultValue={defaultValue ?? ""}
       aria-label={name.startsWith("home") ? "Marcador local" : "Marcador visitante"}
-      className="h-10 w-11 shrink-0 rounded-lg border border-neutral-700 bg-neutral-950 text-center text-base text-neutral-100 focus-visible:border-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/30"
+      className="h-10 w-11 shrink-0 bg-neutral-950 px-0 text-center"
     />
   );
 }
