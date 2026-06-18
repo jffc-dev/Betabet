@@ -298,26 +298,28 @@ function findCurrentMatchId(items: PlayItem[]): string | null {
   return target === 0 ? null : items[target].roundMatchId;
 }
 
+// A YYYY-MM-DD key for a date in the viewer's local timezone. Kickoffs arrive
+// as UTC ISO strings; keying on the local day (not the UTC day) is what keeps
+// the "Hoy" filter and the date headers in agreement — a late-night kickoff can
+// fall on a different UTC day than the one the user actually sees it under.
+// Both isToday and groupByDate route through here so they can never drift.
+function localDayKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 // True when the match kicks off on the local calendar day we're currently in.
 function isToday(kickoff: PlayItem["kickoff"]): boolean {
-  const date = new Date(kickoff);
-  const now = new Date();
-  return (
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-  );
+  return localDayKey(new Date(kickoff)) === localDayKey(new Date());
 }
 
 function groupByDate(items: PlayItem[]) {
   const map = new Map<string, { key: string; label: string; items: PlayItem[] }>();
   for (const item of items) {
     const date = new Date(item.kickoff);
-    // Key by the viewer's local calendar day so it matches the displayed label.
-    // Using the UTC date here merges matches that fall on different local days
-    // (e.g. a late-night Lima kickoff lands on the next day in UTC), pulling
-    // them under the wrong date header.
-    const key = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+    const key = localDayKey(date);
     const label = date.toLocaleDateString("es-MX", {
       weekday: "long",
       day: "numeric",

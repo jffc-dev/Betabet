@@ -25,7 +25,7 @@ export async function deleteInvitationAction(ref: { id: string; slug: string }) 
 /**
  * Redeem an invitation with the visitor's name. First use creates a guest
  * Member; if the link was already redeemed we just resume that member. Either
- * way the session cookie is set and we land on /play.
+ * way the session cookie is set and we land on /.
  */
 export async function joinWithNameAction(
   code: string,
@@ -64,5 +64,5 @@ export async function joinWithNameAction(
   });
 
   await setSessionToken(accessToken);
-  redirect("/play");
+  redirect("/");
 }

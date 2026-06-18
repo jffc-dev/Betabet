@@ -57,7 +57,7 @@ export async function saveRoundResultsAction(
 
   revalidatePath(`/groups/${ref.slug}/rounds/${ref.roundId}`);
   revalidatePath(`/groups/${ref.slug}/leaderboard`);
-  revalidatePath("/play");
+  revalidatePath("/");
   return {
     ok: true,
     message: `Guardado · ${updates.length} ${updates.length === 1 ? "resultado" : "resultados"}`,

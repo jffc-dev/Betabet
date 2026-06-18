@@ -49,7 +49,7 @@ export async function savePredictionsAction(
     );
   }
 
-  revalidatePath("/play");
+  revalidatePath("/");
   return {
     ok: true,
     message: `Guardado · ${toSave.length} ${toSave.length === 1 ? "predicción" : "predicciones"}`,

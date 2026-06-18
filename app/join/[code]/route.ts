@@ -4,7 +4,7 @@ import { SESSION_COOKIE, sessionCookieOptions } from "../../lib/session";
 
 // Entry point for an invitation link. Sets the session and redirects:
 // - invalid code  -> /join/invalid
-// - already used   -> resume that member's session -> /play
+// - already used   -> resume that member's session -> /
 // - first use      -> /join/[code]/name to capture the visitor's name
 export async function GET(req: Request, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params;
@@ -19,7 +19,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ code: st
   }
 
   if (invitation.redeemedByMember) {
-    const res = NextResponse.redirect(new URL("/play", req.url));
+    const res = NextResponse.redirect(new URL("/", req.url));
     res.cookies.set(
       SESSION_COOKIE,
       invitation.redeemedByMember.accessToken,
