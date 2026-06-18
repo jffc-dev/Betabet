@@ -16,6 +16,8 @@ function parseGroupForm(formData: FormData) {
     name: formData.get("name"),
     description: formData.get("description") ?? "",
     defaultMatchPoints: formData.get("defaultMatchPoints"),
+    defaultScoringMode: formData.get("defaultScoringMode"),
+    defaultUniqueHitPoints: formData.get("defaultUniqueHitPoints"),
   });
 }
 
@@ -40,7 +42,8 @@ export async function createGroupAction(
 ): Promise<ActionState> {
   const parsed = parseGroupForm(formData);
   if (!parsed.success) return invalid(parsed.error);
-  const { name, description, defaultMatchPoints } = parsed.data;
+  const { name, description, defaultMatchPoints, defaultScoringMode, defaultUniqueHitPoints } =
+    parsed.data;
 
   const slug = await uniqueSlug(
     name,
@@ -48,7 +51,14 @@ export async function createGroupAction(
   );
 
   await prisma.group.create({
-    data: { name, slug, description: description ?? null, defaultMatchPoints },
+    data: {
+      name,
+      slug,
+      description: description ?? null,
+      defaultMatchPoints,
+      defaultScoringMode,
+      defaultUniqueHitPoints,
+    },
   });
 
   revalidatePath("/groups");
@@ -62,12 +72,19 @@ export async function updateGroupAction(
 ): Promise<ActionState> {
   const parsed = parseGroupForm(formData);
   if (!parsed.success) return invalid(parsed.error);
-  const { name, description, defaultMatchPoints } = parsed.data;
+  const { name, description, defaultMatchPoints, defaultScoringMode, defaultUniqueHitPoints } =
+    parsed.data;
 
   await prisma.group.update({
     where: { id: ref.id },
     // slug is intentionally immutable so URLs stay stable.
-    data: { name, description: description ?? null, defaultMatchPoints },
+    data: {
+      name,
+      description: description ?? null,
+      defaultMatchPoints,
+      defaultScoringMode,
+      defaultUniqueHitPoints,
+    },
   });
 
   revalidatePath("/groups");

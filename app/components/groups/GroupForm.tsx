@@ -1,12 +1,21 @@
 "use client";
 
-import { useActionState, useEffect, type ReactNode } from "react";
+import { useActionState, useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { Label } from "../ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import { initialActionState, type ActionState } from "../../lib/actions/types";
+
+type ScoringMode = "FLAT" | "UNIQUE_BONUS";
 
 type GroupFormAction = (state: ActionState, formData: FormData) => Promise<ActionState>;
 
@@ -17,11 +26,16 @@ interface GroupFormProps {
     name?: string;
     description?: string | null;
     defaultMatchPoints?: number;
+    defaultScoringMode?: ScoringMode;
+    defaultUniqueHitPoints?: number;
   };
 }
 
 export function GroupForm({ action, submitLabel, defaultValues }: GroupFormProps) {
   const [state, formAction, pending] = useActionState(action, initialActionState);
+  const [scoringMode, setScoringMode] = useState<ScoringMode>(
+    defaultValues?.defaultScoringMode ?? "FLAT",
+  );
 
   useEffect(() => {
     if (state.message && !state.ok) toast.error(state.message);
@@ -75,6 +89,55 @@ export function GroupForm({ action, submitLabel, defaultValues }: GroupFormProps
           required
         />
       </Field>
+
+      <Field
+        label="Modo de puntuación"
+        htmlFor="defaultScoringMode"
+        hint="Valor por defecto al crear rondas."
+        error={fieldError("defaultScoringMode")}
+      >
+        <Select
+          name="defaultScoringMode"
+          value={scoringMode}
+          onValueChange={(v) => setScoringMode(v as ScoringMode)}
+        >
+          <SelectTrigger id="defaultScoringMode" aria-invalid={Boolean(fieldError("defaultScoringMode"))}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="FLAT">Plano · todos los aciertos suman igual</SelectItem>
+            <SelectItem value="UNIQUE_BONUS">Bonificación única · acierto en solitario</SelectItem>
+          </SelectContent>
+        </Select>
+      </Field>
+
+      {scoringMode === "UNIQUE_BONUS" ? (
+        <Field
+          label="Puntos por acierto único"
+          htmlFor="defaultUniqueHitPoints"
+          hint="Se otorgan cuando solo un miembro acierta el partido."
+          error={fieldError("defaultUniqueHitPoints")}
+        >
+          <Input
+            id="defaultUniqueHitPoints"
+            name="defaultUniqueHitPoints"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={100}
+            defaultValue={defaultValues?.defaultUniqueHitPoints ?? 2}
+            aria-invalid={Boolean(fieldError("defaultUniqueHitPoints"))}
+            required
+          />
+        </Field>
+      ) : (
+        // Keep the value in the payload so the schema always receives it.
+        <input
+          type="hidden"
+          name="defaultUniqueHitPoints"
+          value={defaultValues?.defaultUniqueHitPoints ?? 2}
+        />
+      )}
 
       <Button type="submit" disabled={pending} className="mt-1 w-full">
         {pending ? "Guardando…" : submitLabel}

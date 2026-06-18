@@ -1,4 +1,4 @@
-import type { PrismaClient } from "../generated/prisma/client";
+import type { Prisma, PrismaClient } from "../generated/prisma/client";
 
 // 1X2 outcome values, matching the Prisma `Outcome` enum string values.
 export type OutcomeValue = "HOME" | "DRAW" | "AWAY";
@@ -51,6 +51,55 @@ export function scoreRoundMatch(
     const isCorrect = p.outcome === actual;
     return { memberId: p.memberId, isCorrect, pointsAwarded: isCorrect ? award : 0 };
   });
+}
+
+/**
+ * Persist points for every prediction on the given matches. The matches must
+ * already have final scores; this settles each round-match that references them
+ * (a match is shared across groups/rounds, each with its own scoring config and
+ * bets). Idempotent — safe to re-run when a result is edited. Runs against the
+ * caller's client or transaction.
+ */
+export async function settleMatches(
+  client: Prisma.TransactionClient,
+  matchIds: string[],
+): Promise<void> {
+  if (matchIds.length === 0) return;
+
+  const roundMatches = await client.roundMatch.findMany({
+    where: { matchId: { in: matchIds } },
+    select: {
+      points: true,
+      uniqueHitPoints: true,
+      round: { select: { scoringMode: true } },
+      match: { select: { homeScore: true, awayScore: true } },
+      predictions: { select: { id: true, memberId: true, outcome: true } },
+    },
+  });
+
+  for (const rm of roundMatches) {
+    if (rm.match.homeScore == null || rm.match.awayScore == null) continue;
+    const result = deriveOutcome(rm.match.homeScore, rm.match.awayScore);
+
+    const scores = scoreRoundMatch(
+      result,
+      rm.predictions.map((p) => ({ memberId: p.memberId, outcome: p.outcome as OutcomeValue })),
+      {
+        mode: rm.round.scoringMode as ScoringModeValue,
+        points: rm.points,
+        uniqueHitPoints: rm.uniqueHitPoints,
+      },
+    );
+    const scoreByMember = new Map(scores.map((s) => [s.memberId, s]));
+
+    for (const prediction of rm.predictions) {
+      const score = scoreByMember.get(prediction.memberId)!;
+      await client.prediction.update({
+        where: { id: prediction.id },
+        data: { isCorrect: score.isCorrect, pointsAwarded: score.pointsAwarded },
+      });
+    }
+  }
 }
 
 export interface LeaderboardEntry {

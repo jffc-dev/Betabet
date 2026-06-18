@@ -19,6 +19,14 @@ export const groupInputSchema = z.object({
     .int("Debe ser un número entero")
     .min(1, "Mínimo 1 punto")
     .max(100, "Máximo 100 puntos"),
+  defaultScoringMode: z.enum(["FLAT", "UNIQUE_BONUS"], {
+    message: "Modo de puntuación inválido",
+  }),
+  defaultUniqueHitPoints: z.coerce
+    .number({ message: "Debe ser un número" })
+    .int("Debe ser un número entero")
+    .min(1, "Mínimo 1 punto")
+    .max(100, "Máximo 100 puntos"),
 });
 
 export type GroupInput = z.infer<typeof groupInputSchema>;
