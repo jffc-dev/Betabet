@@ -1,11 +1,19 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, CircleCheck, TriangleAlert } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, CircleCheck, Copy, TriangleAlert, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { initialActionState, type ActionState } from "../../lib/actions/types";
+import { initialActionState } from "../../lib/actions/types";
+import type { ResultActionState, ResultSummary } from "../../lib/actions/results";
+
+/** The pick shown to users: the chosen team's name, or "Empate" for a draw. */
+function pickLabel(outcome: string, match: ResultSummary["match"]): string {
+  if (outcome === "HOME") return match.home;
+  if (outcome === "AWAY") return match.away;
+  return "Empate";
+}
 
 export interface ResultMatch {
   matchId: string;
@@ -22,10 +30,14 @@ export function RoundResultsForm({
   action,
   matches,
 }: {
-  action: (state: ActionState, formData: FormData) => Promise<ActionState>;
+  action: (state: ResultActionState, formData: FormData) => Promise<ResultActionState>;
   matches: ResultMatch[];
 }) {
-  const [state, formAction, pending] = useActionState(action, initialActionState);
+  const [state, formAction, pending] = useActionState<ResultActionState, FormData>(
+    action,
+    initialActionState,
+  );
+  const [summary, setSummary] = useState<ResultSummary | null>(null);
 
   // Start on the first match still missing a result; fall back to the first.
   const [index, setIndex] = useState(() => {
@@ -60,6 +72,7 @@ export function RoundResultsForm({
     }
     toast.success(state.message);
     setConfirmOpen(false);
+    if (state.summary) setSummary(state.summary);
 
     const savedId = current.matchId;
     setSavedIds((prev) => new Set(prev).add(savedId));
@@ -204,8 +217,151 @@ export function RoundResultsForm({
           </Button>
         </div>
       </ConfirmDialog>
+
+      <SummaryDialog summary={summary} onClose={() => setSummary(null)} />
     </form>
   );
+}
+
+function SummaryDialog({
+  summary,
+  onClose,
+}: {
+  summary: ResultSummary | null;
+  onClose: () => void;
+}) {
+  return (
+    <ConfirmDialog open={summary !== null} onClose={onClose}>
+      {summary ? (
+        <div className="flex flex-col">
+          <h2 className="text-lg font-bold text-neutral-100">Resultado guardado</h2>
+
+          {/* Final score */}
+          <div className="mt-4 flex items-center justify-center gap-3 rounded-2xl border border-neutral-800 bg-neutral-900 p-3">
+            <span className="min-w-0 flex-1 truncate text-right text-sm text-neutral-100">
+              {summary.match.home}
+            </span>
+            <span className="shrink-0 text-lg font-bold tabular-nums text-neutral-100">
+              {summary.match.homeScore} - {summary.match.awayScore}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm text-neutral-100">
+              {summary.match.away}
+            </span>
+          </div>
+
+          {/* Points from this match */}
+          <section className="mt-5">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              Puntos de este partido
+            </h3>
+            {summary.lines.length === 0 ? (
+              <p className="text-sm text-neutral-500">Nadie apostó en este partido.</p>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {summary.lines.map((line) => (
+                  <li
+                    key={line.memberName}
+                    className="flex items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm"
+                  >
+                    {line.isCorrect ? (
+                      <Check className="size-4 shrink-0 text-emerald-400" />
+                    ) : (
+                      <X className="size-4 shrink-0 text-neutral-600" />
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-neutral-100">{line.memberName}</span>
+                    <span className="shrink-0 truncate text-xs text-neutral-500">
+                      {pickLabel(line.outcome, summary.match)}
+                    </span>
+                    <span
+                      className={`shrink-0 tabular-nums ${line.points > 0 ? "font-semibold text-emerald-400" : "text-neutral-500"}`}
+                    >
+                      +{line.points}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* Running standings */}
+          <section className="mt-5">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              Clasificación
+            </h3>
+            <ul className="flex flex-col gap-1">
+              {summary.leaderboard.map((row) => (
+                <li
+                  key={`${row.rank}-${row.name}`}
+                  className="flex items-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm"
+                >
+                  <span className="w-5 shrink-0 text-center text-xs font-semibold text-neutral-500 tabular-nums">
+                    {row.rank}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-neutral-100">{row.name}</span>
+                  <span className="shrink-0 text-xs text-neutral-500">
+                    {row.correct}/{row.played}
+                  </span>
+                  <span className="shrink-0 font-semibold tabular-nums text-neutral-100">
+                    {row.points} pts
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          <div className="mt-5 flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={() => copyShareText(summary)}
+            >
+              <Copy className="size-4" />
+              Copiar
+            </Button>
+            <Button type="button" className="flex-1" onClick={onClose}>
+              Continuar
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </ConfirmDialog>
+  );
+}
+
+/** Build a WhatsApp-friendly plain-text summary (bold via *asterisks*). */
+function buildShareText(summary: ResultSummary): string {
+  const { match } = summary;
+  const lines: string[] = [
+    `⚽ *${match.home} ${match.homeScore}-${match.awayScore} ${match.away}*`,
+    "",
+    "*Puntos de este partido*",
+  ];
+
+  if (summary.lines.length === 0) {
+    lines.push("Nadie apostó en este partido.");
+  } else {
+    for (const l of summary.lines) {
+      const mark = l.isCorrect ? "✅" : "❌";
+      lines.push(`${mark} ${l.memberName} (${pickLabel(l.outcome, match)}) +${l.points}`);
+    }
+  }
+
+  lines.push("", "*Clasificación*");
+  for (const row of summary.leaderboard) {
+    lines.push(`${row.rank}. ${row.name} — ${row.points} pts (${row.correct}/${row.played})`);
+  }
+
+  return lines.join("\n");
+}
+
+async function copyShareText(summary: ResultSummary) {
+  try {
+    await navigator.clipboard.writeText(buildShareText(summary));
+    toast.success("Resumen copiado");
+  } catch {
+    toast.error("No se pudo copiar el resumen");
+  }
 }
 
 function ConfirmDialog({

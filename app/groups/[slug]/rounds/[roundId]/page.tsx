@@ -39,9 +39,14 @@ export default async function RoundResultsPage({
       <BackLink href={`/groups/${slug}`} label={round.group.name} />
       <div className="flex items-start justify-between gap-2">
         <h1 className="min-w-0 text-2xl font-bold tracking-tight text-neutral-100">{round.title}</h1>
-        <Button asChild variant="outline" size="sm" className="shrink-0">
-          <Link href={`/groups/${slug}/leaderboard?round=${round.id}`}>Clasificación</Link>
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/groups/${slug}/rounds/${round.id}/edit`}>Editar</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/groups/${slug}/leaderboard?round=${round.id}`}>Clasificación</Link>
+          </Button>
+        </div>
       </div>
       <p className="mb-5 mt-1 text-sm text-neutral-400">
         Anota el marcador final de cada partido.

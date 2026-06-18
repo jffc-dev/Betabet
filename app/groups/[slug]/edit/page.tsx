@@ -29,6 +29,8 @@ export default async function EditGroupPage({
           name: group.name,
           description: group.description,
           defaultMatchPoints: group.defaultMatchPoints,
+          defaultScoringMode: group.defaultScoringMode,
+          defaultUniqueHitPoints: group.defaultUniqueHitPoints,
         }}
       />
     </main>

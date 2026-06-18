@@ -1,6 +1,19 @@
 import { cache } from "react";
 import { prisma } from "../prisma";
 
+/** Minimal round shape for the edit form (title + scoring config). */
+export const getRoundForEdit = cache(async (roundId: string) => {
+  return prisma.round.findUnique({
+    where: { id: roundId },
+    select: {
+      id: true,
+      title: true,
+      scoringMode: true,
+      group: { select: { slug: true, name: true } },
+    },
+  });
+});
+
 /** A round with its matches + teams + current scores, for the result-entry page. */
 export const getRoundForResults = cache(async (roundId: string) => {
   return prisma.round.findUnique({
