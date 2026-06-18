@@ -2,7 +2,7 @@
 
 import type React from "react";
 import { useActionState, useEffect, useMemo, useRef, useState, startTransition } from "react";
-import { Check, CalendarDays, ListFilter } from "lucide-react";
+import { Check, CalendarDays, ListFilter, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
@@ -81,6 +81,13 @@ export function PredictionBoard({ items, action }: { items: PlayItem[]; action: 
                       pick={picks[item.roundMatchId] ?? null}
                       onPick={(outcome) =>
                         setPicks((prev) => ({ ...prev, [item.roundMatchId]: outcome }))
+                      }
+                      onClear={() =>
+                        setPicks((prev) => {
+                          const next = { ...prev };
+                          delete next[item.roundMatchId];
+                          return next;
+                        })
                       }
                     />
                   </li>
@@ -174,19 +181,26 @@ function MatchPicker({
   item,
   pick,
   onPick,
+  onClear,
 }: {
   item: PlayItem;
   pick: Outcome | null;
   onPick: (outcome: Outcome) => void;
+  onClear: () => void;
 }) {
   const time = new Date(item.kickoff).toLocaleTimeString("es-MX", {
     hour: "2-digit",
     minute: "2-digit",
   });
 
+  // Tapping the already-selected outcome toggles it off; the header button is
+  // the discoverable way to do the same. Both are no-ops once the match locks.
+  const select = (outcome: Outcome) => (pick === outcome ? onClear() : onPick(outcome));
+  const canClear = pick != null && !item.locked;
+
   return (
     <section className="rounded-3xl border border-neutral-800 bg-neutral-900 p-3">
-      <header className="mb-2 flex items-center justify-between px-1 text-xs text-neutral-400">
+      <header className="mb-2 flex items-center justify-between gap-2 px-1 text-xs text-neutral-400">
         <span className="truncate">{item.competition ?? "Partido"}</span>
         <span className={item.locked ? "text-neutral-500" : ""}>
           {item.locked ? "Cerrado" : time}
@@ -199,7 +213,7 @@ function MatchPicker({
           tag="Local"
           selected={pick === "HOME"}
           disabled={item.locked}
-          onSelect={() => onPick("HOME")}
+          onSelect={() => select("HOME")}
         />
         <OutcomeRow
           label="Empate"
@@ -207,7 +221,7 @@ function MatchPicker({
           draw
           selected={pick === "DRAW"}
           disabled={item.locked}
-          onSelect={() => onPick("DRAW")}
+          onSelect={() => select("DRAW")}
         />
         <OutcomeRow
           crest={item.away.crest}
@@ -215,9 +229,19 @@ function MatchPicker({
           tag="Visitante"
           selected={pick === "AWAY"}
           disabled={item.locked}
-          onSelect={() => onPick("AWAY")}
+          onSelect={() => select("AWAY")}
         />
       </div>
+      {canClear ? (
+        <button
+          type="button"
+          onClick={onClear}
+          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-2xl border border-neutral-800 py-2.5 text-sm font-medium text-neutral-400 transition-colors hover:border-neutral-700 hover:text-neutral-100 active:bg-neutral-800"
+        >
+          <X className="size-4" />
+          Quitar predicción
+        </button>
+      ) : null}
     </section>
   );
 }
