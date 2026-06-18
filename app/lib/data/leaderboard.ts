@@ -7,79 +7,71 @@ export interface LeaderboardRow {
   name: string;
   points: number;
   correct: number;
-  played: number; // predicted matches that already have a result
+  played: number; // finished matches the member has faced (whether they bet or not)
   rank: number;
 }
 
-interface ScoredPrediction {
-  roundMatchId: string;
-  memberId: string;
-  outcome: OutcomeValue;
-  pointsAwarded: number | null;
-  isCorrect: boolean | null;
+interface ScoredRoundMatch {
   scoringMode: ScoringModeValue;
-  matchPoints: number; // shared/correct award
+  points: number; // shared/correct award
   uniqueHitPoints: number;
   homeScore: number | null;
   awayScore: number | null;
   result: OutcomeValue | null;
+  predictions: Array<{
+    memberId: string;
+    outcome: OutcomeValue;
+    pointsAwarded: number | null;
+    isCorrect: boolean | null;
+  }>;
 }
 
 /**
- * Rank members by points. Predictions are grouped per round-match so the
- * unique-hit bonus can see how many members got each match right. A match
- * counts once it has a final score: trust the persisted `pointsAwarded` when a
- * round was settled, otherwise compute live. Ties share a rank (competition
+ * Rank members by points. Scoring is driven by finished round-matches, not by
+ * predictions: every group member "faces" each finished match, so a member who
+ * didn't bet still counts it as played and scores 0 — the standings reflect the
+ * result the moment it's entered, even with no bets. Per-prediction points are
+ * trusted when persisted (settled at result entry); otherwise computed live so
+ * the unique-hit bonus can count correct picks. Ties share a rank (competition
  * ranking: 1, 2, 2, 4).
  */
 export function computeLeaderboard(
   members: Array<{ id: string; name: string }>,
-  predictions: ScoredPrediction[],
+  roundMatches: ScoredRoundMatch[],
 ): LeaderboardRow[] {
   const rows = new Map<string, LeaderboardRow>();
   for (const m of members) {
     rows.set(m.id, { memberId: m.id, name: m.name, points: 0, correct: 0, played: 0, rank: 0 });
   }
 
-  // Group by round-match: the bonus depends on the full set of picks per match.
-  const byMatch = new Map<string, ScoredPrediction[]>();
-  for (const p of predictions) {
-    const group = byMatch.get(p.roundMatchId);
-    if (group) group.push(p);
-    else byMatch.set(p.roundMatchId, [p]);
-  }
+  for (const rm of roundMatches) {
+    if (rm.homeScore == null || rm.awayScore == null) continue; // not finished yet
+    const actual = rm.result ?? deriveOutcome(rm.homeScore, rm.awayScore);
 
-  for (const group of byMatch.values()) {
-    const sample = group[0];
-    if (sample.homeScore == null || sample.awayScore == null) continue; // no result yet
-    const actual = sample.result ?? deriveOutcome(sample.homeScore, sample.awayScore);
-
-    // A settled round persists per-prediction points (bonus already applied);
-    // trust them. Otherwise score the whole match live so the bonus can count
-    // correct picks across members.
-    const settled = group.some((p) => p.pointsAwarded != null);
+    // Trust persisted per-prediction points (bonus already applied at settle);
+    // otherwise score the whole match live so the bonus can count correct picks.
+    const settled = rm.predictions.length > 0 && rm.predictions.every((p) => p.pointsAwarded != null);
     const scoreByMember = new Map<string, { points: number; correct: boolean }>();
     if (settled) {
-      for (const p of group) {
+      for (const p of rm.predictions) {
         scoreByMember.set(p.memberId, { points: p.pointsAwarded ?? 0, correct: p.isCorrect ?? false });
       }
     } else {
-      const scores = scoreRoundMatch(actual, group, {
-        mode: sample.scoringMode,
-        points: sample.matchPoints,
-        uniqueHitPoints: sample.uniqueHitPoints,
+      const scores = scoreRoundMatch(actual, rm.predictions, {
+        mode: rm.scoringMode,
+        points: rm.points,
+        uniqueHitPoints: rm.uniqueHitPoints,
       });
       for (const s of scores) {
         scoreByMember.set(s.memberId, { points: s.pointsAwarded, correct: s.isCorrect });
       }
     }
 
-    for (const p of group) {
-      const row = rows.get(p.memberId);
-      const score = scoreByMember.get(p.memberId);
-      if (!row || !score) continue;
-      row.points += score.points;
-      row.correct += score.correct ? 1 : 0;
+    // Every group member faces this finished match; non-bettors score 0.
+    for (const row of rows.values()) {
+      const score = scoreByMember.get(row.memberId);
+      row.points += score?.points ?? 0;
+      row.correct += score?.correct ? 1 : 0;
       row.played += 1;
     }
   }
@@ -100,61 +92,50 @@ export function computeLeaderboard(
   return sorted;
 }
 
-const predictionSelect = {
-  memberId: true,
-  roundMatchId: true,
-  outcome: true,
-  pointsAwarded: true,
-  isCorrect: true,
-  roundMatch: {
-    select: {
-      points: true,
-      uniqueHitPoints: true,
-      round: { select: { scoringMode: true } },
-      match: { select: { homeScore: true, awayScore: true, result: true } },
-    },
+const roundMatchSelect = {
+  points: true,
+  uniqueHitPoints: true,
+  round: { select: { scoringMode: true } },
+  match: { select: { homeScore: true, awayScore: true, result: true } },
+  predictions: {
+    select: { memberId: true, outcome: true, pointsAwarded: true, isCorrect: true },
   },
 } as const;
 
-type RawPrediction = {
-  memberId: string;
-  roundMatchId: string;
-  outcome: OutcomeValue;
-  pointsAwarded: number | null;
-  isCorrect: boolean | null;
-  roundMatch: {
-    points: number;
-    uniqueHitPoints: number;
-    round: { scoringMode: ScoringModeValue };
-    match: { homeScore: number | null; awayScore: number | null; result: OutcomeValue | null };
-  };
+type RawRoundMatch = {
+  points: number;
+  uniqueHitPoints: number;
+  round: { scoringMode: ScoringModeValue };
+  match: { homeScore: number | null; awayScore: number | null; result: OutcomeValue | null };
+  predictions: Array<{
+    memberId: string;
+    outcome: OutcomeValue;
+    pointsAwarded: number | null;
+    isCorrect: boolean | null;
+  }>;
 };
 
-function toScored(p: RawPrediction): ScoredPrediction {
+function toScored(rm: RawRoundMatch): ScoredRoundMatch {
   return {
-    memberId: p.memberId,
-    roundMatchId: p.roundMatchId,
-    outcome: p.outcome,
-    pointsAwarded: p.pointsAwarded,
-    isCorrect: p.isCorrect,
-    scoringMode: p.roundMatch.round.scoringMode,
-    matchPoints: p.roundMatch.points,
-    uniqueHitPoints: p.roundMatch.uniqueHitPoints,
-    homeScore: p.roundMatch.match.homeScore,
-    awayScore: p.roundMatch.match.awayScore,
-    result: p.roundMatch.match.result,
+    scoringMode: rm.round.scoringMode,
+    points: rm.points,
+    uniqueHitPoints: rm.uniqueHitPoints,
+    homeScore: rm.match.homeScore,
+    awayScore: rm.match.awayScore,
+    result: rm.match.result,
+    predictions: rm.predictions,
   };
 }
 
 export const getGroupLeaderboard = cache(async (groupId: string): Promise<LeaderboardRow[]> => {
-  const [members, predictions] = await Promise.all([
+  const [members, roundMatches] = await Promise.all([
     prisma.member.findMany({ where: { groupId }, select: { id: true, name: true } }),
-    prisma.prediction.findMany({
-      where: { roundMatch: { round: { groupId } } },
-      select: predictionSelect,
+    prisma.roundMatch.findMany({
+      where: { round: { groupId } },
+      select: roundMatchSelect,
     }),
   ]);
-  return computeLeaderboard(members, (predictions as RawPrediction[]).map(toScored));
+  return computeLeaderboard(members, (roundMatches as RawRoundMatch[]).map(toScored));
 });
 
 export const getRoundLeaderboard = cache(async (roundId: string) => {
@@ -164,14 +145,14 @@ export const getRoundLeaderboard = cache(async (roundId: string) => {
   });
   if (!round) return null;
 
-  const [members, predictions] = await Promise.all([
+  const [members, roundMatches] = await Promise.all([
     prisma.member.findMany({ where: { groupId: round.groupId }, select: { id: true, name: true } }),
-    prisma.prediction.findMany({
-      where: { roundMatch: { roundId } },
-      select: predictionSelect,
+    prisma.roundMatch.findMany({
+      where: { roundId },
+      select: roundMatchSelect,
     }),
   ]);
-  return { round, rows: computeLeaderboard(members, (predictions as RawPrediction[]).map(toScored)) };
+  return { round, rows: computeLeaderboard(members, (roundMatches as RawRoundMatch[]).map(toScored)) };
 });
 
 export const listGroupRounds = cache(async (groupId: string) => {

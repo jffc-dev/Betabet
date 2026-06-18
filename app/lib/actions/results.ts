@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "../prisma";
-import { deriveOutcome } from "../scoring";
+import { deriveOutcome, settleMatches } from "../scoring";
 import { scoreSchema } from "../validation/result";
 import type { ActionState } from "./types";
 
@@ -37,9 +37,12 @@ export async function saveRoundResultsAction(
 
   if (updates.length === 0) return { ok: false, message: "No hay marcadores para guardar." };
 
-  await prisma.$transaction(
-    updates.map((u) =>
-      prisma.match.update({
+  // Write the scores and settle points in one transaction: every prediction on
+  // these matches gets its points persisted (and re-persisted on edit), so the
+  // leaderboard reflects the result immediately, bets or not.
+  await prisma.$transaction(async (tx) => {
+    for (const u of updates) {
+      await tx.match.update({
         where: { id: u.id },
         data: {
           homeScore: u.home,
@@ -47,9 +50,10 @@ export async function saveRoundResultsAction(
           status: "FINISHED",
           result: deriveOutcome(u.home, u.away),
         },
-      }),
-    ),
-  );
+      });
+    }
+    await settleMatches(tx, updates.map((u) => u.id));
+  });
 
   revalidatePath(`/groups/${ref.slug}/rounds/${ref.roundId}`);
   revalidatePath(`/groups/${ref.slug}/leaderboard`);
