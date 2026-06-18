@@ -1,7 +1,8 @@
 "use client";
 
+import type React from "react";
 import { useActionState, useEffect, useMemo, useRef, useState, startTransition } from "react";
-import { Check } from "lucide-react";
+import { Check, CalendarDays, ListFilter } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
@@ -9,6 +10,7 @@ import { initialActionState, type ActionState } from "../../lib/actions/types";
 import type { PlayItem } from "../../lib/data/play";
 
 type Outcome = "HOME" | "DRAW" | "AWAY";
+type Filter = "all" | "today";
 type SaveAction = (
   state: ActionState,
   picks: { roundMatchId: string; outcome: Outcome }[],
@@ -21,13 +23,19 @@ export function PredictionBoard({ items, action }: { items: PlayItem[]; action: 
     return initial;
   });
   const [state, formAction, pending] = useActionState(action, initialActionState);
+  const [filter, setFilter] = useState<Filter>("all");
 
   useEffect(() => {
     if (!state.message) return;
     (state.ok ? toast.success : toast.error)(state.message);
   }, [state]);
 
-  const groups = useMemo(() => groupByDate(items), [items]);
+  const todayCount = useMemo(() => items.filter((i) => isToday(i.kickoff)).length, [items]);
+  const visibleItems = useMemo(
+    () => (filter === "today" ? items.filter((i) => isToday(i.kickoff)) : items),
+    [items, filter],
+  );
+  const groups = useMemo(() => groupByDate(visibleItems), [visibleItems]);
   const predicted = Object.keys(picks).length;
   const openCount = items.filter((i) => !i.locked).length;
 
@@ -51,30 +59,58 @@ export function PredictionBoard({ items, action }: { items: PlayItem[]; action: 
 
   return (
     <>
-      <div className="flex flex-col gap-6">
-        {groups.map((group) => (
-          <section key={group.key}>
-            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-              {group.label}
-            </h2>
-            <ul className="flex flex-col gap-3">
-              {group.items.map((item) => (
-                <li
-                  key={item.roundMatchId}
-                  ref={item.roundMatchId === targetId ? targetRef : undefined}
-                >
-                  <MatchPicker
-                    item={item}
-                    pick={picks[item.roundMatchId] ?? null}
-                    onPick={(outcome) =>
-                      setPicks((prev) => ({ ...prev, [item.roundMatchId]: outcome }))
-                    }
-                  />
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
+      {visibleItems.length === 0 ? (
+        <p className="mt-10 text-center text-sm text-neutral-500">
+          No hay partidos hoy. Toca «Todos» para ver el resto.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-6">
+          {groups.map((group) => (
+            <section key={group.key}>
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                {group.label}
+              </h2>
+              <ul className="flex flex-col gap-3">
+                {group.items.map((item) => (
+                  <li
+                    key={item.roundMatchId}
+                    ref={item.roundMatchId === targetId ? targetRef : undefined}
+                  >
+                    <MatchPicker
+                      item={item}
+                      pick={picks[item.roundMatchId] ?? null}
+                      onPick={(outcome) =>
+                        setPicks((prev) => ({ ...prev, [item.roundMatchId]: outcome }))
+                      }
+                    />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      )}
+
+      {/* Floating filter: toggles between all matches and just today's. Sits
+          above the save bar so it stays reachable while scrolling the list. */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-20 z-30 flex justify-center px-4">
+        <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-neutral-700 bg-neutral-900/90 p-1 shadow-lg shadow-black/40 backdrop-blur">
+          <FilterTab
+            active={filter === "all"}
+            onClick={() => setFilter("all")}
+            icon={<ListFilter className="size-4" />}
+            label="Todos"
+            count={items.length}
+          />
+          <FilterTab
+            active={filter === "today"}
+            onClick={() => setFilter("today")}
+            disabled={todayCount === 0}
+            icon={<CalendarDays className="size-4" />}
+            label="Hoy"
+            count={todayCount}
+          />
+        </div>
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-20 border-t border-neutral-800 bg-neutral-950/90 backdrop-blur">
@@ -88,6 +124,49 @@ export function PredictionBoard({ items, action }: { items: PlayItem[]; action: 
         </div>
       </div>
     </>
+  );
+}
+
+function FilterTab({
+  active,
+  onClick,
+  disabled,
+  icon,
+  label,
+  count,
+}: {
+  active: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+  icon: React.ReactNode;
+  label: string;
+  count: number;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-pressed={active}
+      className={cn(
+        "flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-colors",
+        active
+          ? "bg-emerald-500 text-emerald-950"
+          : "text-neutral-300 hover:bg-neutral-800 active:bg-neutral-800",
+        disabled && !active ? "cursor-not-allowed opacity-40 hover:bg-transparent" : "",
+      )}
+    >
+      {icon}
+      {label}
+      <span
+        className={cn(
+          "rounded-full px-1.5 text-xs font-medium tabular-nums",
+          active ? "bg-emerald-950/20 text-emerald-950" : "bg-neutral-800 text-neutral-400",
+        )}
+      >
+        {count}
+      </span>
+    </button>
   );
 }
 
@@ -219,11 +298,26 @@ function findCurrentMatchId(items: PlayItem[]): string | null {
   return target === 0 ? null : items[target].roundMatchId;
 }
 
+// True when the match kicks off on the local calendar day we're currently in.
+function isToday(kickoff: PlayItem["kickoff"]): boolean {
+  const date = new Date(kickoff);
+  const now = new Date();
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  );
+}
+
 function groupByDate(items: PlayItem[]) {
   const map = new Map<string, { key: string; label: string; items: PlayItem[] }>();
   for (const item of items) {
     const date = new Date(item.kickoff);
-    const key = date.toISOString().slice(0, 10);
+    // Key by the viewer's local calendar day so it matches the displayed label.
+    // Using the UTC date here merges matches that fall on different local days
+    // (e.g. a late-night Lima kickoff lands on the next day in UTC), pulling
+    // them under the wrong date header.
+    const key = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
     const label = date.toLocaleDateString("es-MX", {
       weekday: "long",
       day: "numeric",
