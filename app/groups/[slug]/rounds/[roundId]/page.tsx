@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getRoundForResults } from "../../../../lib/data/rounds";
-import { saveRoundResultsAction } from "../../../../lib/actions/results";
+import { saveMatchResultAction } from "../../../../lib/actions/results";
 import { RoundResultsForm } from "../../../../components/rounds/RoundResultsForm";
 import { BackLink } from "../../../../components/BackLink";
 import { Button } from "../../../../components/ui/button";
@@ -18,14 +18,21 @@ export default async function RoundResultsPage({
   const round = await getRoundForResults(roundId);
   if (!round || round.group.slug !== slug) notFound();
 
-  const matches = round.roundMatches.map((rm) => ({
-    matchId: rm.match.id,
-    kickoff: rm.match.kickoff.toISOString(),
-    home: { name: rm.match.homeTeam.name, crest: rm.match.homeTeam.crestUrl },
-    away: { name: rm.match.awayTeam.name, crest: rm.match.awayTeam.crestUrl },
-    homeScore: rm.match.homeScore,
-    awayScore: rm.match.awayScore,
-  }));
+  const members = round.group.members;
+  const matches = round.roundMatches.map((rm) => {
+    const predicted = new Set(rm.predictions.map((p) => p.memberId));
+    return {
+      matchId: rm.match.id,
+      kickoff: rm.match.kickoff.toISOString(),
+      home: { name: rm.match.homeTeam.name, crest: rm.match.homeTeam.crestUrl },
+      away: { name: rm.match.awayTeam.name, crest: rm.match.awayTeam.crestUrl },
+      homeScore: rm.match.homeScore,
+      awayScore: rm.match.awayScore,
+      hasResult: rm.match.homeScore !== null && rm.match.awayScore !== null,
+      // Group members with no prediction for this match (warned about, non-blocking).
+      missingBettors: members.filter((m) => !predicted.has(m.id)).map((m) => m.name),
+    };
+  });
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-1 flex-col px-4 py-6">
@@ -44,7 +51,7 @@ export default async function RoundResultsPage({
         <p className="text-sm text-neutral-500">Esta ronda no tiene partidos.</p>
       ) : (
         <RoundResultsForm
-          action={saveRoundResultsAction.bind(null, { roundId: round.id, slug })}
+          action={saveMatchResultAction.bind(null, { roundId: round.id, slug })}
           matches={matches}
         />
       )}

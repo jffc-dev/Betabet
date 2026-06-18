@@ -2,7 +2,7 @@
 
 import type React from "react";
 import { useActionState, useEffect, useMemo, useRef, useState, startTransition } from "react";
-import { Check, CalendarDays, ListFilter, X } from "lucide-react";
+import { Check, CalendarDays, CircleDashed, ListFilter, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
@@ -10,7 +10,7 @@ import { initialActionState, type ActionState } from "../../lib/actions/types";
 import type { PlayItem } from "../../lib/data/play";
 
 type Outcome = "HOME" | "DRAW" | "AWAY";
-type Filter = "all" | "today";
+type Filter = "all" | "today" | "pending";
 type SaveAction = (
   state: ActionState,
   picks: { roundMatchId: string; outcome: Outcome }[],
@@ -31,10 +31,17 @@ export function PredictionBoard({ items, action }: { items: PlayItem[]; action: 
   }, [state]);
 
   const todayCount = useMemo(() => items.filter((i) => isToday(i.kickoff)).length, [items]);
-  const visibleItems = useMemo(
-    () => (filter === "today" ? items.filter((i) => isToday(i.kickoff)) : items),
-    [items, filter],
+  // Pending = still open to bet on and not yet predicted. Keyed off `picks` so
+  // the count drops live as the user makes selections, even before saving.
+  const pendingCount = useMemo(
+    () => items.filter((i) => !i.locked && !picks[i.roundMatchId]).length,
+    [items, picks],
   );
+  const visibleItems = useMemo(() => {
+    if (filter === "today") return items.filter((i) => isToday(i.kickoff));
+    if (filter === "pending") return items.filter((i) => !i.locked && !picks[i.roundMatchId]);
+    return items;
+  }, [items, filter, picks]);
   const groups = useMemo(() => groupByDate(visibleItems), [visibleItems]);
   const predicted = Object.keys(picks).length;
   const openCount = items.filter((i) => !i.locked).length;
@@ -61,7 +68,9 @@ export function PredictionBoard({ items, action }: { items: PlayItem[]; action: 
     <>
       {visibleItems.length === 0 ? (
         <p className="mt-10 text-center text-sm text-neutral-500">
-          No hay partidos hoy. Toca «Todos» para ver el resto.
+          {filter === "pending"
+            ? "¡Listo! No te queda ningún partido por predecir."
+            : "No hay partidos hoy. Toca «Todos» para ver el resto."}
         </p>
       ) : (
         <div className="flex flex-col gap-6">
@@ -116,6 +125,14 @@ export function PredictionBoard({ items, action }: { items: PlayItem[]; action: 
             icon={<CalendarDays className="size-4" />}
             label="Hoy"
             count={todayCount}
+          />
+          <FilterTab
+            active={filter === "pending"}
+            onClick={() => setFilter("pending")}
+            disabled={pendingCount === 0}
+            icon={<CircleDashed className="size-4" />}
+            label="Pendientes"
+            count={pendingCount}
           />
         </div>
       </div>

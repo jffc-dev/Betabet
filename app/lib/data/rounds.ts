@@ -10,12 +10,19 @@ export const getRoundForResults = cache(async (roundId: string) => {
       title: true,
       status: true,
       groupId: true,
-      group: { select: { slug: true, name: true } },
+      group: {
+        select: {
+          slug: true,
+          name: true,
+          members: { select: { id: true, name: true }, orderBy: { name: "asc" } },
+        },
+      },
       roundMatches: {
         orderBy: { match: { kickoff: "asc" } },
         select: {
           id: true,
           points: true,
+          predictions: { select: { memberId: true } },
           match: {
             select: {
               id: true,

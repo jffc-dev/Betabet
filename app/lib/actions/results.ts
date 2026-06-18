@@ -7,59 +7,49 @@ import { scoreSchema } from "../validation/result";
 import type { ActionState } from "./types";
 
 // NOTE(auth): result entry should later be gated to group admins.
-export async function saveRoundResultsAction(
+//
+// Save the final score of a single match in a round (the one-by-one result flow).
+// The match id travels in the form so a single bound action can serve every match.
+export async function saveMatchResultAction(
   ref: { roundId: string; slug: string },
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
-  const round = await prisma.round.findUnique({
-    where: { id: ref.roundId },
-    select: { roundMatches: { select: { match: { select: { id: true } } } } },
-  });
-  if (!round) return { ok: false, message: "Ronda no encontrada." };
+  const matchId = String(formData.get("matchId") ?? "").trim();
+  const homeRaw = String(formData.get("home") ?? "").trim();
+  const awayRaw = String(formData.get("away") ?? "").trim();
 
-  const updates: Array<{ id: string; home: number; away: number }> = [];
-  for (const { match } of round.roundMatches) {
-    const homeRaw = String(formData.get(`home_${match.id}`) ?? "").trim();
-    const awayRaw = String(formData.get(`away_${match.id}`) ?? "").trim();
-
-    if (homeRaw === "" && awayRaw === "") continue; // not entered yet
-    if (homeRaw === "" || awayRaw === "") {
-      return { ok: false, message: "Completa ambos marcadores o deja el partido vacío." };
-    }
-    const home = scoreSchema.safeParse(homeRaw);
-    const away = scoreSchema.safeParse(awayRaw);
-    if (!home.success || !away.success) {
-      return { ok: false, message: "Marcadores inválidos (0–99)." };
-    }
-    updates.push({ id: match.id, home: home.data, away: away.data });
+  if (homeRaw === "" || awayRaw === "") {
+    return { ok: false, message: "Completa ambos marcadores." };
+  }
+  const home = scoreSchema.safeParse(homeRaw);
+  const away = scoreSchema.safeParse(awayRaw);
+  if (!home.success || !away.success) {
+    return { ok: false, message: "Marcadores inválidos (0–99)." };
   }
 
-  if (updates.length === 0) return { ok: false, message: "No hay marcadores para guardar." };
+  // Confirm the match really belongs to this round before mutating it.
+  const roundMatch = await prisma.roundMatch.findFirst({
+    where: { roundId: ref.roundId, matchId },
+    select: { id: true },
+  });
+  if (!roundMatch) return { ok: false, message: "Partido no encontrado." };
 
-  // Write the scores and settle points in one transaction: every prediction on
-  // these matches gets its points persisted (and re-persisted on edit), so the
-  // leaderboard reflects the result immediately, bets or not.
   await prisma.$transaction(async (tx) => {
-    for (const u of updates) {
-      await tx.match.update({
-        where: { id: u.id },
-        data: {
-          homeScore: u.home,
-          awayScore: u.away,
-          status: "FINISHED",
-          result: deriveOutcome(u.home, u.away),
-        },
-      });
-    }
-    await settleMatches(tx, updates.map((u) => u.id));
+    await tx.match.update({
+      where: { id: matchId },
+      data: {
+        homeScore: home.data,
+        awayScore: away.data,
+        status: "FINISHED",
+        result: deriveOutcome(home.data, away.data),
+      },
+    });
+    await settleMatches(tx, [matchId]);
   });
 
   revalidatePath(`/groups/${ref.slug}/rounds/${ref.roundId}`);
   revalidatePath(`/groups/${ref.slug}/leaderboard`);
   revalidatePath("/");
-  return {
-    ok: true,
-    message: `Guardado · ${updates.length} ${updates.length === 1 ? "resultado" : "resultados"}`,
-  };
+  return { ok: true, message: "Resultado guardado" };
 }
